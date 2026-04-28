@@ -1,6 +1,5 @@
 import cats.syntax.all.*
-import cats.effect.{IO, IOApp, Sync, Async}
-import cats.effect.ExitCode
+import cats.effect.{IO, IOApp, Sync}
 import java.sql.Timestamp
 import java.io.File
 import cats.effect.kernel.Resource
@@ -31,21 +30,18 @@ final case class LogEntry(
   *   "somefolder/logs")
   * @return
   */
-object LogSentinel extends IOApp:
-  override def run(args: List[String]): IO[ExitCode] =
-    for
-      paths = pathArgs(args)
-      _ <- IO.raiseWhen(paths.length == 0)(
-        new IllegalArgumentException(
-          "provide directory/s for LogSentinel or leave to empty to default to 'logs' directory"
-        )
-      )
-      _ <- IO(paths.map(n => new File(n)).map(f => f.exists()).foreach(println))
-    yield (ExitCode(0))
+object LogSentinel extends IOApp.Simple:
 
-  private def pathArgs(args: List[String]): List[String] =
-    val fileArgs = args.filterNot(a => a.startsWith("-"))
-    if fileArgs.isEmpty then List("logs") else fileArgs
+  def run: IO[Unit] =
+    for
+      files <- getLogs()
+      _ <- files.traverse_(processFile)
+    yield ()
+
+  private def getLogs(): IO[List[File]] =
+    IO.blocking {
+      Option(new File("logs").listFiles()).toList.flatten.filter(_.isFile)
+    }
 
   def readStream[F[_]: Sync](f: File): Resource[F, FileInputStream] =
     Resource.make(Sync[F].blocking(new FileInputStream(f))) {
@@ -53,7 +49,7 @@ object LogSentinel extends IOApp:
         Sync[F].blocking(inStream.close()).handleErrorWith(_ => Sync[F].unit)
     }
 
-  def processFile[F[_]: Sync](file: File) =
-    readStream(file).use { stream =>
-      Sync[F].blocking(cats.effect.std.Console[IO].println(s"$stream"))
+  def processFile(file: File): IO[Unit] =
+    readStream[IO](file).use { fis =>
+      IO.println(s"opened: ${file.getPath}")
     }
