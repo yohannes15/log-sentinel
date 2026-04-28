@@ -1,0 +1,38 @@
+# sbt
+target/
+project/target/
+project/project/target/
+project/project/
+project/metals.sbt
+lib_managed/
+src_managed/
+project/boot/
+
+# BSP / Metals / Bloop
+.bsp/
+.bloop/
+.metals/
+.metals.bak/
+
+# sbt / Scala misc
+.scala_dependencies
+.scala-build
+.cache
+.cache-main
+.history
+
+# build artifacts
+*.class
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editors — do not commit local debug config; other `.vscode/*` can still be tracked
+.idea/
+*.iml
+*.swp
+*~
+
+.cursor/

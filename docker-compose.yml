@@ -1,0 +1,37 @@
+# Build context is repo root. Image: docker/scala-sbt-neovim/Dockerfile
+#
+# Dev container + CLI:  docker compose up -d
+# Shell:                docker compose exec dev bash
+# Neovim:               docker compose exec dev nvim
+#
+# Named sbt/ivy/coursier volumes below: keep as-is for devcontainer up (postStart/postCreate chown
+# in .devcontainer fixes root-owned volume perms). If you use only docker compose (no devcontainer),
+# comment out those three lines and the root `volumes:` block so caches live in the container layer
+# instead — then you do not get ~/.ivy2 permission errors. Uncomment them again when using devcontainer.
+#
+# Git identity + SSH: host `~/.gitconfig` and `~/.ssh` are mounted so `git push` in the container
+# matches your Mac (ensure ~/.gitconfig exists; SSH remotes need keys in ~/.ssh).
+#
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/scala-sbt-neovim/Dockerfile
+    container_name: livelogsentinel-dev
+    working_dir: /workspaces
+    command: sleep infinity
+    volumes:
+      - .:/workspaces:cached
+      - sbt-sbt:/home/sbtuser/.sbt
+      - sbt-ivy2:/home/sbtuser/.ivy2
+      - sbt-coursier:/home/sbtuser/.cache/coursier
+      - ${HOME}/.config/nvim:/home/sbtuser/.config/nvim:cached
+      - ${HOME}/.gitconfig:/home/sbtuser/.gitconfig:ro
+      - ${HOME}/.ssh:/home/sbtuser/.ssh:ro
+    ports:
+      - "8080:8080"
+
+volumes:
+  sbt-sbt:
+  sbt-ivy2:
+  sbt-coursier:

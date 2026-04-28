@@ -1,0 +1,25 @@
+{
+  "name": "Scala (sbt + Metals)",
+  "dockerComposeFile": [
+    "../docker-compose.yml"
+  ],
+  "service": "dev",
+  "workspaceFolder": "/workspaces",
+  "overrideCommand": true,
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "scalameta.metals"
+      ],
+      "settings": {
+        "files.watcherExclude": {
+          "**/target/**": true
+        }
+      }
+    }
+  },
+  "forwardPorts": [8080],
+  "postStartCommand": "sudo chown -R sbtuser:sbtuser /home/sbtuser/.sbt /home/sbtuser/.ivy2 /home/sbtuser/.cache",
+  "postCreateCommand": "sudo chown -R sbtuser:sbtuser /home/sbtuser/.sbt /home/sbtuser/.ivy2 /home/sbtuser/.cache && java -version && sbt sbtVersion",
+  "remoteUser": "sbtuser"
+}
