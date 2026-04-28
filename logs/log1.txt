@@ -1,0 +1,4 @@
+2026-04-27T19:55:10Z INFO api user logged in
+2026-04-27T19:55:11Z WARN db retrying connection
+2026-04-27T19:55:12Z ERROR api request failed
+
