@@ -5,6 +5,14 @@ ThisBuild / version := "0.1.0-SNAPSHOT"
 lazy val root = (project in file("."))
   .settings(
     name := "livelogsentinel",
+
+    Compile / run / fork := true,
+
+    scalacOptions ++= Seq(
+      "-Xkind-projector",
+      "-Wnonunit-statement"
+    ),
+
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-effect" % "3.7.0",
       "org.typelevel" %% "cats-effect-std" % "3.5.3",
