@@ -84,7 +84,7 @@ object LogSentinel extends IOApp.Simple:
     val filename = path.last // gets filename from path
     for
       _ <- if (errors.nonEmpty) then
-        IO.println(s"[$filename] errors: ${errors.mkString(",")}")
+        IO.println(s"[$filename] \nerrors: \n${errors.mkString("\n")}")
       else IO.unit
       counts = getLogLevelCounts(entries)
       _ <- IO.println(s"[$filename] summary: $counts")
