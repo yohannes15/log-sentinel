@@ -110,5 +110,5 @@ object LogSentinel extends IOApp.Simple:
       IO.pure((file, errors, entries))
     }
 
-def getLogLevelCounts(entries: List[LogEntry]): Map[LogLevel, Int] =
-  entries.groupBy(_.level).view.mapValues(_.size).toMap
+  def getLogLevelCounts(entries: List[LogEntry]): Map[LogLevel, Int] =
+    entries.groupBy(_.level).view.mapValues(_.size).toMap
