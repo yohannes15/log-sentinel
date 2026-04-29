@@ -40,18 +40,18 @@ object LogEntry:
     // Parse using the custom formatter and convert to a java.sql.Timestamp
     Timestamp.from(java.time.OffsetDateTime.parse(s, formatter).toInstant)
 
-  def fromString(s: String): ValidatedNec[String, LogEntry] =
+  def fromString(s: String): Either[String, LogEntry] =
     s match
       case logLinePattern(tsStr, lvlStr, src, msg) =>
         lvlStr match
           case "INFO" =>
-            LogEntry(toTimeStamp(tsStr), LogLevel.INFO, src, msg).validNec
+            Right(LogEntry(toTimeStamp(tsStr), LogLevel.INFO, src, msg))
           case "WARN" =>
-            LogEntry(toTimeStamp(tsStr), LogLevel.WARN, src, msg).validNec
+            Right(LogEntry(toTimeStamp(tsStr), LogLevel.WARN, src, msg))
           case "ERROR" =>
-            LogEntry(toTimeStamp(tsStr), LogLevel.ERROR, src, msg).validNec
-          case other => s"Unknown log level: $other on line: $s".invalidNec
-      case _ => s"Can't parse log line: $s".invalidNec
+            Right(LogEntry(toTimeStamp(tsStr), LogLevel.ERROR, src, msg))
+          case other => Left(s"Unknown log level: $other on line: $s")
+      case _ => Left(s"Can't parse log line: $s")
 
 /** LogSentinel parses text and json files representing logs, and analyzes and
   * summarizes the data. If args is left empty, the program assumes the logs are
@@ -70,17 +70,24 @@ object LogSentinel extends IOApp.Simple:
     for
       files <- getLogs()
       logEntries <- files.traverse(getLogEntries)
-      _ <- logEntries.zipWithIndex.traverse { case (validated, idx) =>
-        validated match
-          case Valid(entries) =>
-            val counts = getLogLevelCounts(entries)
-            IO.println(s"File ${idx + 1} summary: $counts")
-          case Invalid(errors) =>
-            IO.println(
-              s"File ${idx + 1} failed with ${errors.size}: ${errors.head} ..."
-            )
-
+      _ <- logEntries.zipWithIndex.traverse {
+        case ((path, errors, entries), _) =>
+          processFileResult(errors, entries, path)
       }
+    yield ()
+
+  private def processFileResult(
+      errors: List[String],
+      entries: List[LogEntry],
+      path: Path
+  ): IO[Unit] =
+    val filename = path.last // gets filename from path
+    for
+      _ <- if (errors.nonEmpty) then
+        IO.println(s"[$filename] errors: ${errors.mkString(",")}")
+      else IO.unit
+      counts = getLogLevelCounts(entries)
+      _ <- IO.println(s"[$filename] summary: $counts")
     yield ()
 
   private def getLogs(): IO[List[Path]] = IO.blocking {
@@ -90,13 +97,18 @@ object LogSentinel extends IOApp.Simple:
   def readStream[F[_]: Sync](f: Path): Resource[F, Generator[String]] =
     Resource.make(Sync[F].blocking(os.read.lines.stream(f)))(_ => Sync[F].unit)
 
-  def getLogEntries(file: Path): IO[ValidatedNec[String, List[LogEntry]]] =
+  def getLogEntries(file: Path): IO[(Path, List[String], List[LogEntry])] =
     readStream[IO](file).use { gen =>
       val lines = gen.map(_.trim).filter(_.nonEmpty).toList
-      val validated: ValidatedNec[String, List[LogEntry]] =
-        lines.traverse(LogEntry.fromString)
-      IO.pure(validated)
+      // Partition takes a function that returns Either[L, R]
+      // It returns a tuple: (List[L], List[R])
+      val linesProcessed: List[Either[String, LogEntry]] =
+        lines.map(LogEntry.fromString)
+      val (errors, entries): (List[String], List[LogEntry]) =
+        linesProcessed.partitionMap(identity)
+
+      IO.pure((file, errors, entries))
     }
 
-  def getLogLevelCounts(entries: List[LogEntry]): Map[LogLevel, Int] =
-    entries.groupBy(_.level).view.mapValues(_.size).toMap
+def getLogLevelCounts(entries: List[LogEntry]): Map[LogLevel, Int] =
+  entries.groupBy(_.level).view.mapValues(_.size).toMap
