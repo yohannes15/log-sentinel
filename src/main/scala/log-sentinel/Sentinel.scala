@@ -6,6 +6,9 @@ import os.Path
 import geny.Generator
 import scala.util.matching.Regex
 import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
+import cats.data.ValidatedNec
+import cats.data.Validated.Valid
+import cats.data.Validated.Invalid
 //  {"timestamp":"2026-04-27T19:55:10Z","level":"INFO","source":"api","message":"user logged in"}
 
 enum LogLevel:
@@ -37,26 +40,18 @@ object LogEntry:
     // Parse using the custom formatter and convert to a java.sql.Timestamp
     Timestamp.from(java.time.OffsetDateTime.parse(s, formatter).toInstant)
 
-  def fromString(s: String): IO[LogEntry] =
+  def fromString(s: String): ValidatedNec[String, LogEntry] =
     s match
       case logLinePattern(tsStr, lvlStr, src, msg) =>
         lvlStr match
-          case "INFO" => IO.pure(
-              LogEntry(toTimeStamp(tsStr), LogLevel.INFO, src, msg)
-            )
-          case "WARN" => IO.pure(
-              LogEntry(toTimeStamp(tsStr), LogLevel.WARN, src, msg)
-            )
-          case "ERROR" => IO.pure(
-              LogEntry(toTimeStamp(tsStr), LogLevel.ERROR, src, msg)
-            )
-          case other => IO.raiseError(
-              new IllegalArgumentException(s"Unknown log level: $other")
-            )
-      case _ =>
-        IO.raiseError(
-          IllegalArgumentException(s"Can't parse log line: $s")
-        )
+          case "INFO" =>
+            LogEntry(toTimeStamp(tsStr), LogLevel.INFO, src, msg).validNec
+          case "WARN" =>
+            LogEntry(toTimeStamp(tsStr), LogLevel.WARN, src, msg).validNec
+          case "ERROR" =>
+            LogEntry(toTimeStamp(tsStr), LogLevel.ERROR, src, msg).validNec
+          case other => s"Unknown log level: $other on line: $s".invalidNec
+      case _ => s"Can't parse log line: $s".invalidNec
 
 /** LogSentinel parses text and json files representing logs, and analyzes and
   * summarizes the data. If args is left empty, the program assumes the logs are
@@ -75,9 +70,16 @@ object LogSentinel extends IOApp.Simple:
     for
       files <- getLogs()
       logEntries <- files.traverse(getLogEntries)
-      summaries = logEntries.map(getLogLevelCounts)
-      _ <- summaries.zipWithIndex.traverse {
-        (summary, idx) => IO.println(s"File ${idx + 1} summary: $summary")
+      _ <- logEntries.zipWithIndex.traverse { case (validated, idx) =>
+        validated match
+          case Valid(entries) =>
+            val counts = getLogLevelCounts(entries)
+            IO.println(s"File ${idx + 1} summary: $counts")
+          case Invalid(errors) =>
+            IO.println(
+              s"File ${idx + 1} failed with ${errors.size}: ${errors.head} ..."
+            )
+
       }
     yield ()
 
@@ -88,11 +90,12 @@ object LogSentinel extends IOApp.Simple:
   def readStream[F[_]: Sync](f: Path): Resource[F, Generator[String]] =
     Resource.make(Sync[F].blocking(os.read.lines.stream(f)))(_ => Sync[F].unit)
 
-  def getLogEntries(file: Path): IO[List[LogEntry]] =
+  def getLogEntries(file: Path): IO[ValidatedNec[String, List[LogEntry]]] =
     readStream[IO](file).use { gen =>
-      gen.map(
-        _.trim
-      ).filter(_.nonEmpty).toList.traverse(LogEntry.fromString)
+      val lines = gen.map(_.trim).filter(_.nonEmpty).toList
+      val validated: ValidatedNec[String, List[LogEntry]] =
+        lines.traverse(LogEntry.fromString)
+      IO.pure(validated)
     }
 
   def getLogLevelCounts(entries: List[LogEntry]): Map[LogLevel, Int] =
