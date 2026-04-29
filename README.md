@@ -1,8 +1,6 @@
 # Live Log Sentinel
 
-**Status:** scaffold only.
-
-This is a standalone **Phase B capstone** project: a Cats Effect CLI that scans log files, summarizes what it finds, and gives you one more real program before moving to `http4s`.
+a Cats Effect CLI that scans log files, summarizes what it finds
 
 ## Setup
 
@@ -26,8 +24,7 @@ Both formats should decode into the same internal domain model so the reporting 
 
 - It gives you a concrete reason to use `IO`, `Resource`, `Ref`, fibers, cancellation, and concurrency.
 - It is more interesting than a toy exercise, but still smaller than a web service.
-- It gives you a natural reason to learn `circe` before `http4s`.
-- It keeps you in the effect system long enough to feel fluent before introducing HTTP.
+- It gives you a natural reason to learn `circe`.
 
 ## Input formats
 
@@ -67,25 +64,6 @@ This mode is where `circe` fits naturally.
 - Optionally stream progress while the scan is running.
 - Optionally watch a directory for new log files.
 
-## Non-goals
-
-- No HTTP server yet.
-- No database.
-- No deployment or TLS work.
-- No framework-heavy architecture.
-- No generic parser for arbitrary log formats.
-
-## Suggested layout
-
-```text
-livelogsentinel/
-  README.md
-  src/
-    main/
-      scala/
-    test/
-      scala/
-```
 
 ## Milestones
 
