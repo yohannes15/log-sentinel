@@ -5,7 +5,7 @@ import cats.effect.kernel.Resource
 import os.Path
 import geny.Generator
 import scala.util.matching.Regex
-
+import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
 //  {"timestamp":"2026-04-27T19:55:10Z","level":"INFO","source":"api","message":"user logged in"}
 
 enum LogLevel:
@@ -24,10 +24,21 @@ object LogEntry:
   private val logLinePattern: Regex = """^(\S+)\s+(\S+)\s+(\S+)\s+(.+)$""".r
 
   def toTimeStamp(s: String): Timestamp =
-    Timestamp.from(java.time.Instant.parse(s))
+    // flexible formatter that handles ISO dates with optional time offsets (Z, +01:00, etc.)
+    val formatter = new DateTimeFormatterBuilder()
+      .append(
+        DateTimeFormatter.ISO_LOCAL_DATE_TIME
+      ) // Parses the date and time part
+      .optionalStart()
+      .appendOffsetId() // Handles the 'Z' or offset if present
+      .optionalEnd()
+      .toFormatter()
 
-  def fromFileLine(line: String): IO[LogEntry] =
-    line match
+    // Parse using the custom formatter and convert to a java.sql.Timestamp
+    Timestamp.from(java.time.OffsetDateTime.parse(s, formatter).toInstant)
+
+  def fromString(s: String): IO[LogEntry] =
+    s match
       case logLinePattern(tsStr, lvlStr, src, msg) =>
         lvlStr match
           case "INFO" => IO.pure(
@@ -44,7 +55,7 @@ object LogEntry:
             )
       case _ =>
         IO.raiseError(
-          IllegalArgumentException(s"Can't parse log line: $line")
+          IllegalArgumentException(s"Can't parse log line: $s")
         )
 
 /** LogSentinel parses text and json files representing logs, and analyzes and
@@ -64,7 +75,10 @@ object LogSentinel extends IOApp.Simple:
     for
       files <- getLogs()
       logEntries <- files.traverse(getLogEntries)
-      _ <- IO.println(logEntries)
+      summaries = logEntries.map(getLogLevelCounts)
+      _ <- summaries.zipWithIndex.traverse {
+        (summary, idx) => IO.println(s"File ${idx + 1} summary: $summary")
+      }
     yield ()
 
   private def getLogs(): IO[List[Path]] = IO.blocking {
@@ -73,12 +87,13 @@ object LogSentinel extends IOApp.Simple:
 
   def readStream[F[_]: Sync](f: Path): Resource[F, Generator[String]] =
     Resource.make(Sync[F].blocking(os.read.lines.stream(f)))(_ => Sync[F].unit)
-    // inStream =>
-    //  Sync[F].blocking(inStream.close()).handleErrorWith(_ => Sync[F].unit)
 
   def getLogEntries(file: Path): IO[List[LogEntry]] =
     readStream[IO](file).use { gen =>
       gen.map(
         _.trim
-      ).filter(_.nonEmpty).toList.traverse(LogEntry.fromFileLine)
+      ).filter(_.nonEmpty).toList.traverse(LogEntry.fromString)
     }
+
+  def getLogLevelCounts(entries: List[LogEntry]): Map[LogLevel, Int] =
+    entries.groupBy(_.level).view.mapValues(_.size).toMap
