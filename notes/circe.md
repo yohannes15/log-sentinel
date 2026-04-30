@@ -319,3 +319,29 @@ given decodeFoo: Decoder[Thing] =
   }
 // decodeFoo: Decoder[Thing] = io.circe.Decoder$$anon$16@46ef64d
 ```
+
+### Mapping Simple Enums to Strings
+
+When working with simple Scala 3 enums (labels only), using `derives Decoder` can fail if the JSON is a plain string (it expects a tagged object). Instead, map the Decoder to a string.
+
+```scala
+enum LogLevel:
+  case INFO, WARN, ERROR
+
+object LogLevel:
+  given Decoder[LogLevel] = Decoder.decodeString.emap { s =>
+    scala.util.Try(LogLevel.valueOf(s.toUpperCase)).toEither
+      .leftMap(_ => s"'$s' is not a valid LogLevel")
+  }
+```
+
+*Note: If you use a manual `given`, remove `derives Decoder` from the enum definition to avoid "Ambiguous given instances" errors.*
+
+### Handling Custom Types (e.g. Timestamp)
+
+If a type like `java.sql.Timestamp` isn't supported out of the box, map it from a `String` using your own parsing logic.
+
+```scala
+object LogEntry:
+  given Decoder[Timestamp] = Decoder.decodeString.map(toTimeStamp)
+```
