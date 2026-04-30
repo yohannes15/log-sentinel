@@ -1,5 +1,6 @@
 import cats.syntax.all.*
 import cats.effect.{IO, IOApp, Sync}
+import cats.effect.implicits.*
 import cats.data.ValidatedNec
 import cats.data.Validated.Valid
 import cats.data.Validated.Invalid
@@ -92,7 +93,7 @@ object LogSentinel extends IOApp.Simple:
       totalState <- Ref.of[IO, Map[LogLevel, Int]](Map.empty)
       files <- getLogs()
       // process files in parallel
-      logEntries <- files.parTraverse(getLogEntries)
+      logEntries <- files.parTraverseN(2)(getLogEntries)
       _ <- logEntries.traverse { case (path, errors, entries) =>
         val fileCounts = getLogLevelCounts(entries)
         for
@@ -149,12 +150,19 @@ object LogSentinel extends IOApp.Simple:
       case Right(parseFunc) =>
         // File is valid
         readStream[IO](file).use { gen =>
-          val (errors, entries) = gen.toList.map(_.trim).filter(_.nonEmpty)
-            .map(parseFunc) // apply the chosen function
-            // partitionMap takes Either[L, R] f and returns a (List[L], List[R])
-            .partitionMap(identity)
+          val parsedString: Generator[Either[String, LogEntry]] =
+            gen.zipWithIndex.filter((line, _) => line.nonEmpty).map((line, _) =>
+              parseFunc(line.trim)
+            )
+          val (errors, entries) =
+            parsedString.foldLeft(List.empty[String], List.empty[LogEntry]) {
+              case ((errorList, entryList), curr) => curr match
+                  case Left(err)    => (err :: errorList, entryList)
+                  case Right(entry) => (errorList, entry :: entryList)
 
-          IO.pure((file, errors, entries))
+            }
+
+          IO.pure((file, errors.reverse, entries.reverse))
         }
 
   def getLogLevelCounts(entries: List[LogEntry]): Map[LogLevel, Int] =
