@@ -238,11 +238,11 @@ given Decoder[Foo] = deriveUnwrappedDecoder[Foo]
 given Encoder[Foo] = deriveUnwrappedEncoder[Foo]
 ```
 
-#### @JsonCodec
+#### @JsonCodec (Scala 2 Only)
 
-The `circe-generic` project includes a `@JsonCodec` annotation that simplifies the use of semi-automatic generic derivation. This works with both case classes and sealed trait hierarchies. 
+The `circe-generic` project includes a `@JsonCodec` annotation for Scala 2 that simplifies generic derivation.
 
-NOTE: you will need to use the `-Ymacro-annotations` flag to use annotation macros like `@JsonCodec`. If you are using Scala 2.10.x - 2.12.x, you will need the `Marco Paradise` plugin instead.
+**NOTE**: This is **NOT** for Scala 3. In Scala 3, use the `derives` syntax instead. In Scala 2, you need the `-Ymacro-annotations` flag or the `Macro Paradise` plugin.
 
 ```scala
 import io.circe.generic.JsonCodec
