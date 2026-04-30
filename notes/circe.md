@@ -202,4 +202,120 @@ decode[List[Int]]("[1, 2, 3]")
 // res1: Either[io.circe.Error, List[Int]] = Right(value = List(1, 2, 3))
 ```
 
+### Semi-automatic Derivation
 
+Its convenient to have an `Encoder` and `Decoder` defined in your code, and semi-automatic deriviation helps.
+
+```scala
+import io.circe.*
+import io.circe.syntax.*
+import io.circe.generic.semiauto.*
+
+case class Foo(a: Int, b: String, c: Boolean)
+given Decoder[Foo] = deriveDecoder
+given Encoder[Foo] = deriveEncoder
+Foo(13, "Quix", false).asJson
+```
+
+Using derives syntax
+```scala
+case class Foo(a: Int, b: String, c: Boolean) derives Decoder, Encoder
+Foo(13, "Quix", false).asJson
+```
+
+#### Specific case for Value Class derivation
+
+Most of the time, when using case class / value classes, we expect only the inner value in the serialized format. It can be achieved using `circe-generic-extras`. For example, below expected serialization for `Foo(123)` is `123`.
+
+```scala
+
+import io.circe.*
+import io.circe.generic.extras.semiauto.*
+
+case class Foo(a: Int)
+
+given Decoder[Foo] = deriveUnwrappedDecoder[Foo]
+given Encoder[Foo] = deriveUnwrappedEncoder[Foo]
+```
+
+#### @JsonCodec
+
+The `circe-generic` project includes a `@JsonCodec` annotation that simplifies the use of semi-automatic generic derivation. This works with both case classes and sealed trait hierarchies. 
+
+NOTE: you will need to use the `-Ymacro-annotations` flag to use annotation macros like `@JsonCodec`. If you are using Scala 2.10.x - 2.12.x, you will need the `Marco Paradise` plugin instead.
+
+```scala
+import io.circe.generic.JsonCodec
+import io.circe.syntax.*
+
+@JsonCodec case class Bar(i: Int, s: String)
+Bar(13, "Quix").asJson
+// res0: Json = JObject(value = object[i -> 13,s -> "Qux"])
+```
+
+#### forProductN helper methods
+
+Its also possible to construct encoders and decoders for case class-like types in a relatively boilerplate-free way without generic derivation
+
+```scala
+import io.circe.{Decoder, Encoder}
+
+case class User(id: Long, firstName: String, lastName: String)
+
+given decodeUser: Decoder[User] = Decoder.forProduct3("id", "first_name", "last_name")(User.apply)
+// decodeUser: Decoder[User] = io.circe.ProductDecoders$$anon$5@316898a5
+
+given encodeUser: Encoder[User] = Encoder.forProduct3("id", "first_name", "last_name")(u => 
+    (u.id, u.firstName, u.lastName)
+)
+```
+
+Its not as clean or as maintainable as generic derivation, but its less magical, it requires nothing but `circe-core`, and if you need a custom name mapping its currently the best solution (although 0.6.0 introduces experimental configurable generic derivation in the `generic-extras` module)
+
+### Automatic Derivation
+
+It is also possible to derive `Encoders` and `Decoders` for many types with no boilerplate at all. circe uses [https://github.com/milessabin/shapeless](shapeless) (generic programming library for scala) to automatically derive the necessary type class instances:
+
+```scala
+import io.circe.generic.auto.*
+import io.circe.syntax.*
+
+case class Person(name: String)
+case class Greeting(salutation: String, person: Person, exclamationMarks: Int)
+
+Greeting("Hey", Person("Chris"), 3).asJson
+// res0: io.circe.Json = JObject(
+//   value = object[salutation -> "Hey",person -> {
+//   "name" : "Chris"
+// },exclamationMarks -> 3]
+// )
+```
+
+### Custom Codecs 
+
+You can write your own codec, in a couple of ways, instead of using automatic or semi-automatic derivation. Firstly, you can write a new `Encoder[A]` and `Decoder[A]` from scratch:
+
+
+```scala
+import io.circe.{ Decoder, Encoder, HCursor, Json }
+
+class Thing(val foo: String, val bar: Int)
+
+given encodeFoo: Encoder[Thing] = 
+  Encoder.instance[Thing] { a =>
+    Json.obj(
+      ("foo", Json.fromString(a.foo)),
+      ("bar", Json.fromInt(a.bar))
+    )
+  }
+// encodeFoo: Encoder[Thing] = io.circe.Encoder$$anon$3@2143934e
+
+given decodeFoo: Decoder[Thing] =
+  Decoder.instance[Thing] { c =>
+    for {
+      foo <- c.downField("foo").as[String]
+      bar <- c.get[Int]("bar")
+    } yield new Thing(foo, bar)
+  }
+// decodeFoo: Decoder[Thing] = io.circe.Decoder$$anon$16@46ef64d
+```
