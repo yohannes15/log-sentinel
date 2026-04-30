@@ -14,6 +14,8 @@ import io.circe.{Encoder, Decoder}
 import io.circe.parser.{decode, parse}
 import scala.util.Try
 import cats.effect.Ref
+import cats.effect.ExitCode
+import cats.kernel.Monoid
 
 //  {"timestamp":"2026-04-27T19:55:10Z","level":"INFO","source":"api","message":"user logged in"}
 
@@ -26,6 +28,23 @@ object LogLevel:
       s"'$s' is not a valid LogLevel. Expected one of ${LogLevel.values.mkString(", ")}"
     )
   }
+
+final case class Summary(
+    levelCounts: Map[LogLevel, Int],
+    sourceCounts: Map[String, Int],
+    errors: List[String]
+)
+
+object Summary:
+  val empty = Summary(Map.empty, Map.empty, List.empty)
+  given Monoid[Summary] with
+    def empty: Summary = Summary.empty
+    def combine(x: Summary, y: Summary): Summary =
+      Summary(
+        x.levelCounts |+| y.levelCounts,
+        x.sourceCounts |+| y.sourceCounts,
+        x.errors ::: y.errors
+      )
 
 final case class LogEntry(
     timestamp: Timestamp,
@@ -85,19 +104,22 @@ object LogEntry:
   *   "somefolder/logs")
   * @return
   */
-object LogSentinel extends IOApp.Simple:
+object LogSentinel extends IOApp:
 
-  def run: IO[Unit] =
+  def run(args: List[String]): IO[ExitCode] =
     for
+      _ <- IO.raiseWhen(
+        args.isEmpty
+      )(new IllegalArgumentException("folder name not provided"))
       // total counter state
-      totalState <- Ref.of[IO, Map[LogLevel, Int]](Map.empty)
-      files <- getLogs()
+      summaryRef <- Ref.of[IO, Summary](Summary.empty)
+      files <- getLogs(args)
       // process files in parallel
       logEntries <- files.parTraverseN(2)(getLogEntries)
       _ <- logEntries.traverse { case (path, errors, entries) =>
-        val fileCounts = getLogLevelCounts(entries)
+
         for
-          _ <- processFileResult(errors, entries, path)
+          fileSummary <- getFileSummary(errors, entries, path)
 
           /** Update the shared totalState. We use Ref because the files are
             * processed in parallel, and Ref provides a thread-safe way to
@@ -106,32 +128,32 @@ object LogSentinel extends IOApp.Simple:
             * common keys. Ref is useful for Streaming Updates, Progress
             * Reports, ...
             */
-          _ <- totalState.update(oldTotals => oldTotals |+| fileCounts)
+          _ <- summaryRef.update(summary => summary |+| fileSummary)
         yield ()
       }
       // get the final aggregated totals
-      totals <- totalState.get
-      _ <- IO.println(s"***********\nTotals: $totals")
-    yield ()
+      summary <- summaryRef.get
+      _ <- IO.println(s"***********\nSummary: ${summary}")
+    yield (ExitCode.Success)
 
-  private def processFileResult(
+  private def getFileSummary(
       errors: List[String],
       entries: List[LogEntry],
       path: Path
-  ): IO[Unit] =
-    val filename = path.last // gets filename from path
-    for
-      _ <- if (errors.nonEmpty) then
-        IO.println(s"[$filename] \nerrors: \n${errors.mkString("\n")}")
-      else IO.unit
-      counts = getLogLevelCounts(entries)
-      _ <- if (counts.nonEmpty) then
-        IO.println(s"[$filename] \nsummary: \n$counts")
-      else IO.unit
-    yield ()
+  ): IO[Summary] =
+    val fileSummary = Summary(
+      entries.groupBy(_.level).view.mapValues(_.size).toMap,
+      entries.groupBy(_.source).view.mapValues(_.size).toMap,
+      errors
+    )
 
-  private def getLogs(): IO[List[Path]] = IO.blocking {
-    os.list(os.pwd / "logs").filter(os.isFile).toList
+    for
+      _ <- IO.println(s"[$path] \nerrors: \n${errors.mkString("\n")}")
+      _ <- IO.println(s"summary: \n$fileSummary\n")
+    yield (fileSummary)
+
+  private def getLogs(paths: List[String]): IO[List[Path]] = IO.blocking {
+    paths.flatMap(x => os.list(os.pwd / x).filter(os.isFile))
   }
 
   def readStream[F[_]: Sync](f: Path): Resource[F, Generator[String]] =
@@ -164,6 +186,3 @@ object LogSentinel extends IOApp.Simple:
 
           IO.pure((file, errors.reverse, entries.reverse))
         }
-
-  def getLogLevelCounts(entries: List[LogEntry]): Map[LogLevel, Int] =
-    entries.groupBy(_.level).view.mapValues(_.size).toMap
