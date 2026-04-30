@@ -11,7 +11,8 @@ lazy val root = (project in file("."))
 
     scalacOptions ++= Seq(
       "-Xkind-projector",
-      "-Wnonunit-statement"
+      "-Wnonunit-statement",
+      "-Ymacro-annotations"
     ),
  
     libraryDependencies ++= Seq(
