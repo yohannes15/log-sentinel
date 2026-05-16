@@ -2,6 +2,12 @@
 
 a Cats Effect CLI that scans log files, summarizes what it finds
 
+## Portfolio
+
+A command-line log analysis tool built in Scala 3 with Cats Effect that parses, filters, and analyzes both plain text and JSON logs. Demonstrates practical functional programming with IO, Resource management, concurrent processing with fibers, and structured error handling.
+
+The tool provides real-time log monitoring with search capabilities, pattern matching, and structured summaries. Built to practice Cats Effect's concurrency primitives, FS2 streaming, and circe JSON parsing in a real-world scenario more interesting than toy exercises but smaller in scope than a full web service.
+
 ## Setup
 
 You can open the project in the devcontainer or run it with plain Docker Compose.
